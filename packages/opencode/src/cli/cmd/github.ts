@@ -471,7 +471,6 @@ export const GithubRunCommand = cmd({
       let octoRest: Octokit
       let octoGraph: typeof graphql
       let gitConfig: string
-      let hiddenCredentialFiles: string[] = []
       let session: { id: string; title: string; version: string }
       let shareId: string | undefined
       let exitCode = 0
@@ -1003,26 +1002,8 @@ export const GithubRunCommand = cmd({
 
         console.log("Configuring git...")
         const config = "http.https://github.com/.extraheader"
-
-        // actions/checkout@v6 stores credentials in a separate file in RUNNER_TEMP and references it via includeIf
-        // directives. Temporarily hide these files to prevent duplicate Authorization headers when we set our own
-        // credentials. The files will be restored by restoreGitConfig() for subsequent workflow steps.
-        const runnerTemp = process.env["RUNNER_TEMP"]
-        if (runnerTemp) {
-          const { readdir, rename } = await import("node:fs/promises")
-          const { join } = await import("node:path")
-          const files = await readdir(runnerTemp).catch(() => [] as string[])
-          for (const file of files) {
-            if (file.startsWith("git-credentials-") && file.endsWith(".config")) {
-              const sourcePath = join(runnerTemp, file)
-              const backupPath = `${sourcePath}.opencode-bak`
-              await rename(sourcePath, backupPath).catch(() => {})
-              hiddenCredentialFiles.push(backupPath)
-            }
-          }
-        }
-
-        // Unset any extraheader that might be in .git/config directly (older checkout versions)
+        // actions/checkout@v6 no longer stores credentials in .git/config,
+        // so this may not exist - use nothrow() to handle gracefully
         const ret = await $`git config --local --get ${config}`.nothrow()
         if (ret.exitCode === 0) {
           gitConfig = ret.stdout.toString().trim()
@@ -1037,16 +1018,6 @@ export const GithubRunCommand = cmd({
       }
 
       async function restoreGitConfig() {
-        // Restore checkout@v6 credential files that were hidden
-        if (hiddenCredentialFiles.length > 0) {
-          const { rename } = await import("node:fs/promises")
-          for (const backupPath of hiddenCredentialFiles) {
-            const originalPath = backupPath.replace(/\.opencode-bak$/, "")
-            await rename(backupPath, originalPath).catch(() => {})
-          }
-          hiddenCredentialFiles = []
-        }
-
         if (gitConfig === undefined) return
         const config = "http.https://github.com/.extraheader"
         await $`git config --local ${config} "${gitConfig}"`

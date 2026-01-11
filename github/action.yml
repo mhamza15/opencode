@@ -43,6 +43,8 @@ runs:
     - name: Build opencode from source
       shell: bash
       working-directory: ${{ github.action_path }}/..
+      env:
+        OPENCODE_CHANNEL: dev
       run: |
         cd packages/opencode
         bun install
